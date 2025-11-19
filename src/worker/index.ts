@@ -21,6 +21,15 @@ import {
 import OpenAI from "openai";
 import { v4 as uuidv4 } from "uuid";
 
+// Define Env binding types for Hono — adjust specific types as needed
+interface Env {
+    DB: any; // replace `any` with your DB binding type (e.g. D1Database) if available
+    OPENAI_API_KEY?: string;
+    MOCHA_USERS_SERVICE_API_URL?: string;
+    MOCHA_USERS_SERVICE_API_KEY?: string;
+    // add other bindings (KV, R2, etc.) here if you use them
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 const ADMIN_SESSION_COOKIE_NAME = 'admin_session_token';
@@ -180,11 +189,18 @@ app.post("/api/admin/users/:userId/toggle-active", adminAuthMiddleware, async (c
 
 // ===== AUTH ROUTES =====
 
-// Get OAuth redirect URL
+ // Get OAuth redirect URL
 app.get('/api/oauth/google/redirect_url', async (c) => {
+  const apiUrl = c.env.MOCHA_USERS_SERVICE_API_URL;
+  const apiKey = c.env.MOCHA_USERS_SERVICE_API_KEY;
+
+  if (!apiKey) {
+    return c.json({ error: "Mocha users service API key not configured" }, 500);
+  }
+
   const redirectUrl = await getOAuthRedirectUrl('google', {
-    apiUrl: c.env.MOCHA_USERS_SERVICE_API_URL,
-    apiKey: c.env.MOCHA_USERS_SERVICE_API_KEY,
+    apiUrl,
+    apiKey: String(apiKey),
   });
 
   return c.json({ redirectUrl }, 200);
@@ -200,7 +216,7 @@ app.post("/api/sessions", async (c) => {
 
   const sessionToken = await exchangeCodeForSessionToken(body.code, {
     apiUrl: c.env.MOCHA_USERS_SERVICE_API_URL,
-    apiKey: c.env.MOCHA_USERS_SERVICE_API_KEY,
+    apiKey: String(c.env.MOCHA_USERS_SERVICE_API_KEY || ''), // coerce to string to satisfy API type
   });
 
   setCookie(c, MOCHA_SESSION_TOKEN_COOKIE_NAME, sessionToken, {
@@ -270,7 +286,7 @@ app.get('/api/logout', async (c) => {
   if (typeof sessionToken === 'string') {
     await deleteSession(sessionToken, {
       apiUrl: c.env.MOCHA_USERS_SERVICE_API_URL,
-      apiKey: c.env.MOCHA_USERS_SERVICE_API_KEY,
+      apiKey: String(c.env.MOCHA_USERS_SERVICE_API_KEY || ''),
     });
   }
 
